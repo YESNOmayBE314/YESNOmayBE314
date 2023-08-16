@@ -1,0 +1,386 @@
+# initialise stuff
+import pygame
+from math import floor, pi, atan2, sqrt
+from random import randint
+pygame.init()
+running = True
+screen = pygame.display.set_mode((1536, 864))
+clock = pygame.time.Clock()
+font = pygame.font.Font("freesansbold.ttf", 50)
+yVel = 0
+playerX = 500
+playerY = 50
+d = False
+a = False
+canJump = False
+airJump = 0
+rAirJump = 0
+worldNum = 1
+playerdir = -1
+w = False
+bullets = []
+dirtTexture = pygame.image.load("tree.jpg")
+pistol = pygame.image.load("gun.png")
+
+
+# fancy progress bar function
+def drawbar(x, y, fill, colour):
+    pygame.draw.rect(screen, colour, [x, y, 300, 30], 5)
+    pygame.draw.rect(screen, colour, [x, y, fill, 30], 0)
+
+
+# define a load of classes
+class Block:
+    def __init__(self, gx, gy, texture, solidity):
+        # initialise variables
+        self.gx = gx
+        self.gy = gy
+        self.texture = texture
+        self.solidity = solidity
+    def draw(self):
+        # scales and draws the block
+        if self.texture == "b":
+            return
+        img = pygame.transform.scale(self.texture, (50, 50))
+        screen.blit(img, (self.gx*50, self.gy*50))
+class FunkyEntity:
+    def __init__(self, x, y, etype, yvel, canJump, airJump, rAirJump, hp):
+        self.x = x
+        self.y = y
+        self.etype = etype # sic, 'type' is a reserved word in python. Stands for enemy type.
+        self.yvel = yvel
+        self.canJump = canJump
+        self.airJump = airJump
+        self.rAirJump = rAirJump
+        self.hp = hp
+    def draw(self):
+        pygame.draw.rect(screen, (255, 0, 0), [self.x+5, self.y+5, 40, 40])
+    def move(self):
+        if self.canJump and randint(1, 60) == 3:
+            self.yvel = 400
+        self.yvel -= 10
+        self.y -= self.yvel/60
+
+
+        # I am very sceptical of this working
+        # EDIT: well whadya know, it worked!
+        if checkBlcok(self.x + 5, self.y + 45).solidity == 1:
+            self.yvel = 0
+            self.canJump = True
+            self.airJump = False
+            self.rAirJump = 0
+            while checkBlcok(self.x + 5, self.y + 45).solidity == 1:
+                self.y -= 1
+        else:
+            self.airJump = True
+        if checkBlcok(self.x + 45, self.y + 45).solidity == 1:
+            self.yvel = 0
+            self.rAirJump = 0
+            self.airJump = False
+            self.canJump = True
+            while checkBlcok(self.x + 45, self.y + 45).solidity == 1:
+                self.y -= 1
+        elif self.airJump:
+            self.rAirJump += 1
+            if self.rAirJump > 5:
+                self.canJump = False
+
+        # enemy x movement
+        if self.x > playerX:
+            self.x -= 1
+            while checkBlcok(self.x + 5, self.y + 45).solidity == 1:
+                self.x += 1
+            while checkBlcok(self.x + 5, self.y + 5).solidity == 1:
+                self.x -= 1
+        if self.x < playerX:
+            self.x += 1
+            while checkBlcok(self.x + 45, self.y + 45).solidity == 1:
+                self.x -= 1
+            while checkBlcok(self.x + 45, self.y + 5).solidity == 1:
+                self.x += 1
+    def bulletCollide(self):
+        for i in bullets:
+            if 0 < i.x - self.x < 40 and 0 < i.y - self.y < 40:
+                self.hp -= 1
+
+
+
+
+# bullet
+class Bullet:
+    def __init__(self, x, y, bxvel, byvel):
+        self.x = x
+        self.y = y
+        self.bxvel = bxvel
+        self.byvel = byvel
+    def move(self):
+        self.x += self.bxvel
+        self.y += self.byvel
+    def normaliseVel(self, vel):
+        # some random complex math
+        r = self.bxvel/self.byvel
+        if self.bxvel < 0:
+            if self.byvel < 0:
+                self.byvel = sqrt((vel**2 / (r**2 + 1)))
+                self.bxvel = sqrt(self.byvel**2 * r**2)
+            else:
+                self.byvel = 0 - sqrt((vel**2 / (r**2 + 1)))
+                self.bxvel = sqrt(self.byvel**2 * r**2)
+        else:
+            if self.byvel < 0:
+                self.byvel = sqrt((vel**2 / (r**2 + 1)))
+                self.bxvel = 0 - sqrt(self.byvel**2 * r**2)
+            else:
+                self.byvel = 0 - sqrt((vel**2 / (r**2 + 1)))
+                self.bxvel = 0 - sqrt(self.byvel**2 * r**2)
+    def draw(self):
+        pygame.draw.circle(screen, (0, 0, 0), [self.x, self.y], 5)
+    def collide(self):
+        # exactly what it sounds like. The bullet collision detection
+        try:
+            if checkBlcok(self.x, self.y).solidity == 1 or self.x < 0 or self.x > 1536 or self.y > 864:
+                self.bxvel = 0
+                self.byvel = 0
+        except AttributeError:
+            self.bxvel = 0
+            dself.byvel = 0
+
+
+
+
+# generates world
+percent = 0
+world = []
+yele = 9
+for x in range(27):
+    yele += randint(-1, 1)
+    if yele > 13:
+        yele = 13
+    elif yele < 8:
+        yele = 8
+    for y in range(yele):
+        world.append(Block(x, y, "b", 0))
+    for y in range(yele,18):
+        world.append(Block(x, y, dirtTexture, 1))
+    percent += 50/31
+    screen.fill((0, 0, 0))
+    text = font.render(str(floor(percent)) + "%", True, (255, 255, 255))
+    drawbar(200, 260, percent*3, (255, 0, 0))
+    screen.blit(text, (200, 200))
+    pygame.display.update()
+world2 = []
+for x in range(27,31):
+    yele += randint(-1, 1)
+    if yele > 13:
+        yele = 13
+    elif yele < 8:
+        yele = 8
+    for y in range(yele):
+        world.append(Block(x, y, "b", 0))
+        world2.append(Block(x-27, y, "b", 0))
+    for y in range(yele, 18):
+        world.append(Block(x, y, dirtTexture, 1))
+        world2.append(Block(x-27, y, dirtTexture, 1))
+    percent += 50/31
+    screen.fill((0, 0, 0))
+    text = font.render(str(floor(percent)) + "%", True, (255, 255, 255))
+    drawbar(200, 260, percent*3, (255, 0, 0))
+    screen.blit(text, (200, 200))
+    pygame.display.update()
+for x in range(4,31):
+    yele += randint(-1, 1)
+    if yele > 13:
+        yele = 13
+    elif yele < 8:
+        yele = 8
+    for y in range(yele):
+        world2.append(Block(x, y, "b", 0))
+    for y in range(yele, 18):
+        world2.append(Block(x, y, dirtTexture, 1))
+    percent += 50/31
+    screen.fill((0, 0, 0))
+    text = font.render(str(floor(percent)) + "%", True, (255, 255, 255))
+    drawbar(200, 260, percent*3, (255, 0, 0))
+    screen.blit(text, (200, 200))
+    pygame.display.update()
+
+
+# spawns 'funky entities'
+funkyEntities = []
+funkyEntities.append(FunkyEntity(100, 50, 1, 0, 0, 0, 0, 100))
+
+
+
+# checks the block under a point, useful for collision detection
+def checkBlcok(x, y):
+    global world, worldNum, world2
+    gx = floor(x/50)
+    gy = floor(y/50)
+    if worldNum == 1:
+        return world[18 * gx + gy]
+    if worldNum == 2:
+        return world2[18 * gx + gy]
+
+# main game loop
+while running:
+    screen.fill((255, 255, 255))
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_w:
+                w = True
+            if event.key == pygame.K_a:
+                a = True
+            if event.key == pygame.K_d:
+                d = True
+        if event.type == pygame.KEYUP:
+            if event.key == pygame.K_a:
+                a = False
+            if event.key == pygame.K_d:
+                d = False
+            if event.key == pygame.K_w:
+                w = False
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            pos = pygame.mouse.get_pos()
+            if pos[0] > playerX:
+                bullets.append(Bullet(playerX + 50, playerY + 15, playerX - pos[0], playerY - pos[1]))
+                bullets[len(bullets) - 1].normaliseVel(10)
+            else:
+                bullets.append(Bullet(playerX - 50, playerY + 15, playerX - pos[0], playerY - pos[1]))
+                bullets[len(bullets) - 1].normaliseVel(10)
+
+
+
+    # player's gun
+    if playerdir == 1:
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        rel_x, rel_y = mouse_x - playerX - 75, mouse_y - playerY - 30
+        angle = (180 / pi) * - atan2(rel_y, rel_x)
+        image = pygame.transform.rotate(pistol, int(angle))
+        rect = image.get_rect(center = (playerX + 75, playerY + 30))
+        screen.blit(image, rect)
+    elif playerdir == -1:
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        rel_x, rel_y = mouse_x - playerX + 30, mouse_y - playerY - 30
+        image = pygame.transform.flip(pistol, False, True)
+        angle = (180 / pi) * - atan2(rel_y, rel_x)
+        image = pygame.transform.rotate(image, int(angle))
+        rect = image.get_rect(center = (playerX - 30, playerY + 30))
+        screen.blit(image, rect)
+
+
+    if mouse_x < playerX:
+        playerdir = -1
+    elif mouse_x > playerX:
+        playerdir = 1
+
+
+    # draws the world
+    if worldNum == 1:
+        for i in world:
+            i.draw()
+    elif worldNum == 2:
+        for i in world2:
+            i.draw()
+
+
+    # draws 'funky entities'
+    for i in funkyEntities:
+        i.move()
+        i.bulletCollide()
+        i.draw()
+
+
+
+    # deletes dead entites
+    for i in range(len(funkyEntities)):
+        try:
+            if funkyEntities[i].hp < 0:
+                del funkyEntities[i]
+        except IndexError:
+            continue
+
+
+
+    # draws bullets
+    for i in bullets:
+        i.move()
+        i.collide()
+        i.draw()
+
+
+    # deletes collided bullets
+    for i in range(len(bullets)):
+        try:
+            if bullets[i].bxvel == 0 and bullets[i].byvel == 0:
+                del bullets[i]
+        except IndexError:
+            continue
+
+
+
+    # allows jumping
+    if w and canJump:
+        yVel = 400
+        canJump = False
+
+
+    # gravity
+    yVel -= 10
+
+    # draw player
+    pygame.draw.rect(screen, (0, 0, 0), [playerX + 5, playerY + 5, 40, 40])
+
+    # get the player to move in y direction
+    playerY -= yVel/60
+
+    # stop player no-clipping through the ground (aka y collision detection)
+    # all the extra airJump and rAirJump variables are to stop air jumping
+    # y-collision is detected in 2 points
+    i = False
+    if checkBlcok(playerX + 5, playerY + 45).solidity == 1:
+        yVel = 0
+        canJump = True
+        airJump = False
+        rAirJump = 0
+        while checkBlcok(playerX + 5, playerY + 45).solidity == 1:
+            playerY -= 1
+    else:
+        airJump = True
+    if checkBlcok(playerX + 45, playerY + 45).solidity == 1:
+        yVel = 0
+        rAirJump = 0
+        airJump = False
+        canJump = True
+        while checkBlcok(playerX + 45, playerY + 45).solidity == 1:
+            playerY -= 1
+    elif airJump:
+        rAirJump += 1
+        if rAirJump > 5:
+            canJump = False
+
+
+    # player x movement
+    if a:
+        playerX -= 2
+        while checkBlcok(playerX + 5, playerY + 45).solidity == 1:
+            playerX += 1
+        while checkBlcok(playerX + 5, playerY + 5).solidity == 1:
+            playerX += 1
+    if d:
+        playerX += 2
+        while checkBlcok(playerX + 45, playerY + 45).solidity == 1:
+            playerX -= 1
+        while checkBlcok(playerX + 45, playerY + 5).solidity == 1:
+            playerX -= 1
+
+    # wrapping
+    if playerX > 1350:
+        playerX = 150
+        worldNum += 1
+    if playerX < 150:
+        playerX = 1350
+        worldNum -= 1
+    pygame.display.update()
+    clock.tick(120)
